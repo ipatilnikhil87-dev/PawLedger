@@ -326,6 +326,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateDog = async (dog: Dog) => {
     await storage.saveDog(dog);
     setDogs(prev => prev.map(d => (d.id === dog.id ? dog : d)));
+
+    // Cloud sync if user is logged in
+    const token = localStorage.getItem('pawledger_token');
+    if (token) {
+      try {
+        await fetch('/api/auth/sync-dog', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ dog }),
+        });
+      } catch (err) {
+        console.warn('Background cloud sync skipped:', err);
+      }
+    }
   };
 
   const deleteDog = async (id: string) => {

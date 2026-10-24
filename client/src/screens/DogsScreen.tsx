@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n/context';
 import { Dog, BreedSize, Gender } from '../types';
-import { Plus, Check, Trash2, Edit2, Shield, Calendar, Scale, Dog as DogIcon } from 'lucide-react';
+import { Plus, Check, Trash2, Edit2, Shield, Calendar, Scale, Dog as DogIcon, Camera } from 'lucide-react';
 import { getDogAge, formatDate } from '../engine/scheduleEngine';
+import { DogPhotoUploadModal } from '../components/DogPhotoUploadModal';
 
 interface DogsScreenProps {
   onOpenAddDog: () => void;
@@ -14,6 +15,7 @@ export const DogsScreen: React.FC<DogsScreenProps> = ({ onOpenAddDog }) => {
   const { t } = useI18n();
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [photoModalDog, setPhotoModalDog] = useState<Dog | null>(null);
 
   const handleDelete = async (id: string) => {
     await deleteDog(id);
@@ -70,16 +72,42 @@ export const DogsScreen: React.FC<DogsScreenProps> = ({ onOpenAddDog }) => {
               )}
 
               <div style={{ display: 'flex', gap: '14px' }}>
-                <img
-                  src={dog.photoUrl || 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=240&q=80'}
-                  alt={dog.name}
-                  style={{
-                    width: '68px',
-                    height: '68px',
-                    borderRadius: 'var(--radius-md)',
-                    objectFit: 'cover',
-                  }}
-                />
+                <div
+                  style={{ position: 'relative', cursor: 'pointer', flexShrink: 0 }}
+                  onClick={() => setPhotoModalDog(dog)}
+                  title="Click to upload or change dog photo"
+                  id={`dog-photo-${dog.id}`}
+                >
+                  <img
+                    src={dog.photoUrl || 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=240&q=80'}
+                    alt={dog.name}
+                    style={{
+                      width: '68px',
+                      height: '68px',
+                      borderRadius: 'var(--radius-md)',
+                      objectFit: 'cover',
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: '-4px',
+                      right: '-4px',
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      background: 'var(--accent-amber)',
+                      color: '#000',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+                    }}
+                  >
+                    <Camera size={13} />
+                  </div>
+                </div>
 
                 <div style={{ flex: 1 }}>
                   <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>{dog.name}</h3>
@@ -121,6 +149,17 @@ export const DogsScreen: React.FC<DogsScreenProps> = ({ onOpenAddDog }) => {
                   </div>
                 )}
 
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setPhotoModalDog(dog)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  title="Upload or change dog photo"
+                  id={`change-photo-btn-${dog.id}`}
+                >
+                  <Camera size={14} /> Photo
+                </button>
+
                 {dogs.length > 1 && (
                   <button
                     className="icon-btn"
@@ -158,6 +197,13 @@ export const DogsScreen: React.FC<DogsScreenProps> = ({ onOpenAddDog }) => {
           </div>
         </div>
       )}
+
+      {/* Dog Photo Upload & Preview Modal */}
+      <DogPhotoUploadModal
+        isOpen={Boolean(photoModalDog)}
+        onClose={() => setPhotoModalDog(null)}
+        dog={photoModalDog}
+      />
     </div>
   );
 };

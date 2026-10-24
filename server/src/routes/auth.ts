@@ -304,6 +304,8 @@ authRouter.post('/merge-guest-data', authMiddleware, (req: AuthenticatedRequest,
       if (!existing) {
         db.insert('dogs', { ...dog, ownerId: userId, updatedAt: new Date().toISOString() });
         mergedDogsCount++;
+      } else {
+        db.update('dogs', d => d.id === dog.id, current => ({ ...current, ...dog, ownerId: userId, updatedAt: new Date().toISOString() }));
       }
     }
 
@@ -357,6 +359,27 @@ authRouter.post('/merge-guest-data', authMiddleware, (req: AuthenticatedRequest,
       error: 'Backend error while merging guest data into cloud account.',
       details: err?.message,
     });
+  }
+});
+
+// 3b. Sync Individual Dog Profile (Photos, Details)
+authRouter.post('/sync-dog', authMiddleware, (req: AuthenticatedRequest, res: Response): void => {
+  try {
+    const userId = req.user!.id;
+    const { dog } = req.body;
+    if (!dog || !dog.id) {
+      res.status(400).json({ error: 'Valid dog data is required.' });
+      return;
+    }
+    const existing = db.get('dogs').find(d => d.id === dog.id);
+    if (!existing) {
+      db.insert('dogs', { ...dog, ownerId: userId, updatedAt: new Date().toISOString() });
+    } else {
+      db.update('dogs', d => d.id === dog.id, current => ({ ...current, ...dog, ownerId: userId, updatedAt: new Date().toISOString() }));
+    }
+    res.json({ success: true, dog });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to sync dog profile.' });
   }
 });
 

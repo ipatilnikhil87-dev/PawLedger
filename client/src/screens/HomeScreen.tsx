@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { getDogAge } from '../engine/scheduleEngine';
 import { MissedDoseModal } from '../components/MissedDoseModal';
+import { DogPhotoUploadModal } from '../components/DogPhotoUploadModal';
 
 interface HomeScreenProps {
   onOpenAddRecord: (type?: 'vaccine' | 'deworming' | 'tick_flea', vKey?: string, dose?: number) => void;
@@ -62,6 +63,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     isPuppySeries: boolean;
   } | null>(null);
 
+  const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
+
   if (!activeDog) {
     return (
       <div className="card" style={{ textAlign: 'center', padding: '40px 20px' }}>
@@ -84,17 +87,42 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           gap: '16px',
         }}
       >
-        <img
-          src={activeDog.photoUrl || 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=300&q=80'}
-          alt={activeDog.name}
-          style={{
-            width: '74px',
-            height: '74px',
-            borderRadius: 'var(--radius-md)',
-            objectFit: 'cover',
-            border: '2px solid var(--accent-amber)',
-          }}
-        />
+        <div
+          style={{ position: 'relative', cursor: 'pointer', flexShrink: 0 }}
+          onClick={() => setIsPhotoModalOpen(true)}
+          title="Click to upload or change dog photo"
+          id="home-dog-photo-btn"
+        >
+          <img
+            src={activeDog.photoUrl || 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=300&q=80'}
+            alt={activeDog.name}
+            style={{
+              width: '74px',
+              height: '74px',
+              borderRadius: 'var(--radius-md)',
+              objectFit: 'cover',
+              border: '2px solid var(--accent-amber)',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '-4px',
+              right: '-4px',
+              width: '24px',
+              height: '24px',
+              borderRadius: '50%',
+              background: 'var(--accent-amber)',
+              color: '#000',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+            }}
+          >
+            <Camera size={13} />
+          </div>
+        </div>
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <h2 style={{ fontSize: '1.35rem', fontWeight: 800 }}>{activeDog.name}</h2>
@@ -322,6 +350,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           isPuppySeries={selectedOverdue.isPuppySeries}
         />
       )}
+
+      {/* Dog Photo Upload Modal */}
+      <DogPhotoUploadModal
+        isOpen={isPhotoModalOpen}
+        onClose={() => setIsPhotoModalOpen(false)}
+        dog={activeDog}
+      />
     </div>
   );
 };

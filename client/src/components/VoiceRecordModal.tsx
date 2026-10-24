@@ -80,12 +80,25 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
   // sttError shows a non-blocking banner when STT has a network/service issue
   const [sttError, setSttError] = useState<string | null>(null);
 
+  // --- Whisper fallback state ---
+  // 'browser' = use Web Speech API, 'whisper' = record + transcribe via backend, 'none' = unsupported
+  const [sttMode, setSttMode] = useState<'browser' | 'whisper' | 'none'>('browser');
+  // Whether we are recording audio for Whisper transcription
+  const [isWhisperRecording, setIsWhisperRecording] = useState(false);
+  // Indicates we are waiting for the Whisper API to return
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  // Whisper API key status: 'unknown' | 'ok' | 'missing'
+  const [whisperKeyStatus, setWhisperKeyStatus] = useState<'unknown' | 'ok' | 'missing'>('unknown');
+
   const recognitionRef = useRef<any>(null);
   // Whether the user actively wants STT running (for auto-restart logic)
   const isListeningActiveRef = useRef(false);
-  const isRetryingRef = useRef(false);
+  // Audio chunks collected for Whisper transcription
+  const whisperChunksRef = useRef<Blob[]>([]);
+  const whisperRecorderRef = useRef<MediaRecorder | null>(null);
+  const whisperMimeTypeRef = useRef<string>('audio/webm');
 
-  // Optional Audio Memo state (separate from STT, never auto-activated)
+  // Optional Voice Memo state (separate from STT/Whisper, never auto-activated)
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -93,6 +106,8 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<any>(null);
+  const whisperTimerRef = useRef<any>(null);
+  const [whisperSeconds, setWhisperSeconds] = useState(0);
 
   const formatSeconds = (sec: number) => {
     const m = Math.floor(sec / 60);
@@ -104,13 +119,33 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
   useEffect(() => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
     if (!SpeechRecognition) {
       setSpeechSupported(false);
+      setSttMode('whisper');
     }
     // Always clear prior STT errors when modal reopens so user gets a fresh retry
     setSttError(null);
+    setWhisperKeyStatus('unknown');
   }, [isOpen]);
+
+  /** Check if the backend Whisper route is configured with an API key */
+  const checkWhisperKeyAvailable = async (): Promise<boolean> => {
+    try {
+      // We send an empty-body probe (no file); server returns 400 if key is ok, 402 if missing
+      const res = await fetch('http://localhost:4000/api/transcribe', { method: 'POST' });
+      if (res.status === 402) {
+        setWhisperKeyStatus('missing');
+        return false;
+      }
+      // 400 = file missing but key is present = good to go
+      setWhisperKeyStatus('ok');
+      return true;
+    } catch {
+      // Server unreachable — still try; Whisper will fail gracefully later
+      setWhisperKeyStatus('ok');
+      return true;
+    }
+  };
 
   const stopListening = () => {
     if (recognitionRef.current) {
@@ -143,15 +178,17 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
     }
   };
 
-  // Cleanup recognition on modal close or unmount
+  // Cleanup on modal close or unmount
   useEffect(() => {
     if (!isOpen) {
       isListeningActiveRef.current = false;
       stopListening();
       stopLocalAudioRecording();
+      stopWhisperRecording();
       setErrorMessage(null);
       setSttError(null);
       setInterimText('');
+      setIsTranscribing(false);
     }
   }, [isOpen]);
 
@@ -211,10 +248,118 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
     }
   };
 
+  // ──────────────────────────────────────────────────────────────────────────
+  //  WHISPER recording helpers
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const stopWhisperRecording = () => {
+    if (whisperRecorderRef.current && whisperRecorderRef.current.state !== 'inactive') {
+      try { whisperRecorderRef.current.stop(); } catch {}
+    }
+    if (whisperTimerRef.current) {
+      clearInterval(whisperTimerRef.current);
+      whisperTimerRef.current = null;
+    }
+    setIsWhisperRecording(false);
+  };
+
+  /**
+   * Start recording audio for Whisper transcription.
+   * When stopped, POSTs the blob to /api/transcribe and sets the transcript.
+   */
+  const startWhisperRecording = async () => {
+    setSttError(null);
+    setErrorMessage(null);
+    setIsTranscribing(false);
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err: any) {
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setErrorMessage('Microphone access was denied. Please allow microphone permissions in your browser and try again.');
+      } else {
+        setErrorMessage('Could not access microphone. Please check your device.');
+      }
+      return;
+    }
+
+    whisperChunksRef.current = [];
+    let mimeType = 'audio/webm';
+    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
+    else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
+    whisperMimeTypeRef.current = mimeType;
+
+    const recorder = new MediaRecorder(stream, { mimeType });
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) whisperChunksRef.current.push(e.data);
+    };
+
+    recorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      setIsWhisperRecording(false);
+      if (whisperTimerRef.current) { clearInterval(whisperTimerRef.current); whisperTimerRef.current = null; }
+
+      const blob = new Blob(whisperChunksRef.current, { type: mimeType });
+      if (blob.size < 1000) {
+        setSttError('Recording was too short. Please hold the button and speak clearly, then tap again to stop.');
+        return;
+      }
+
+      setIsTranscribing(true);
+      setSttError(null);
+      try {
+        const formData = new FormData();
+        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+        formData.append('audio', blob, `recording.${ext}`);
+        const res = await fetch('http://localhost:4000/api/transcribe', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json() as any;
+        if (!res.ok) {
+          if (data.error === 'no_api_key') {
+            setWhisperKeyStatus('missing');
+            setSttError('OpenAI API key not configured. See the setup instructions below.');
+          } else {
+            setSttError(`Transcription failed: ${data.message || res.status}`);
+          }
+          return;
+        }
+        const text = (data.transcript || '').trim();
+        if (!text) {
+          setSttError('No speech detected. Please speak clearly and try again.');
+          return;
+        }
+        setWhisperKeyStatus('ok');
+        setSttError(null);
+        setTranscript(prev => {
+          const trimmed = prev.trim();
+          return trimmed ? trimmed + ' ' + text : text;
+        });
+      } catch (err: any) {
+        setSttError('Could not reach the transcription server. Is the PawLedger backend running on port 4000?');
+      } finally {
+        setIsTranscribing(false);
+      }
+    };
+
+    whisperRecorderRef.current = recorder;
+    recorder.start(250);
+    setIsWhisperRecording(true);
+    setWhisperSeconds(0);
+    if (whisperTimerRef.current) clearInterval(whisperTimerRef.current);
+    whisperTimerRef.current = setInterval(() => setWhisperSeconds(s => s + 1), 1000);
+  };
+
+  // ──────────────────────────────────────────────────────────────────────────
+  //  BROWSER Web Speech API helpers
+  // ──────────────────────────────────────────────────────────────────────────
+
   /**
    * Creates and starts a Web SpeechRecognition instance.
    * Uses continuous=true and auto-restarts on onend while isListeningActiveRef is true.
-   * On network/service errors shows a non-blocking yellow banner instead of switching to audio.
+   * On network/service errors, switches to Whisper mode instead of showing a dead-end.
    */
   const createAndStartRecognition = (lang: string) => {
     const SpeechRecognition =
@@ -244,14 +389,10 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
       let interimPart = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const res = event.results[i];
-        if (res.isFinal) {
-          finalPart += res[0].transcript;
-        } else {
-          interimPart += res[0].transcript;
-        }
+        if (res.isFinal) finalPart += res[0].transcript;
+        else interimPart += res[0].transcript;
       }
       if (finalPart) {
-        // Append confirmed words to transcript
         setTranscript(prev => {
           const trimmed = prev.trim();
           return trimmed ? trimmed + ' ' + finalPart.trim() : finalPart.trim();
@@ -264,7 +405,6 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
 
     recognition.onerror = (event: any) => {
       console.warn('SpeechRecognition error:', event.error);
-      // 'aborted' fires when we call abort() ourselves — ignore silently
       if (event.error === 'aborted') return;
 
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
@@ -283,42 +423,33 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
         return;
       }
 
-      if (event.error === 'network' || event.error === 'service-not-allowed') {
-        // Non-blocking banner — user can still type or use quick samples
-        setSttError(
-          'Speech recognition requires a connection to browser speech services (Google/Windows). ' +
-          'You can type your entry below or use a Quick Voice Sample. ' +
-          'Try retrying in a moment or grant microphone permissions if prompted.'
-        );
+      if (event.error === 'network') {
+        // Browser can't reach Google speech servers — silently switch to Whisper mode
         isListeningActiveRef.current = false;
         setIsListening(false);
         setInterimText('');
+        setSttMode('whisper');
+        setSttError(
+          'Browser speech services are unreachable (network error). ' +
+          'Switched to Whisper mode — tap the mic, speak, then tap again to transcribe.'
+        );
         return;
       }
 
-      if (event.error === 'no-speech') {
-        // no-speech is normal; if still active, onend will auto-restart
-        return;
-      }
+      if (event.error === 'no-speech') return; // onend auto-restarts
 
-      // Unknown errors: show info banner, don't lock out STT permanently
-      setSttError(`Speech recognition encountered an issue (${event.error}). You can retry or type below.`);
+      // Unknown error — also switch to Whisper
       isListeningActiveRef.current = false;
       setIsListening(false);
       setInterimText('');
+      setSttMode('whisper');
+      setSttError(`Browser speech recognition failed (${event.error}). Switched to Whisper mode.`);
     };
 
     recognition.onend = () => {
-      // Auto-restart if user still wants to be listening (handles Chrome's automatic stop after silence)
       if (isListeningActiveRef.current) {
-        try {
-          recognition.start();
-        } catch {
-          // If restart fails, mark as stopped
-          setIsListening(false);
-          setInterimText('');
-          isListeningActiveRef.current = false;
-        }
+        try { recognition.start(); }
+        catch { setIsListening(false); setInterimText(''); isListeningActiveRef.current = false; }
       } else {
         setIsListening(false);
         setInterimText('');
@@ -326,11 +457,10 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
     };
 
     recognitionRef.current = recognition;
-    try {
-      recognition.start();
-    } catch (err: any) {
+    try { recognition.start(); } catch (err: any) {
       console.warn('Could not start SpeechRecognition:', err);
-      setSttError('Could not start speech recognition. Please type below or use a Quick Voice Sample.');
+      setSttMode('whisper');
+      setSttError('Could not start browser speech recognition. Switched to Whisper mode.');
       setIsListening(false);
       isListeningActiveRef.current = false;
     }
@@ -339,21 +469,18 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
   const startListeningSession = async () => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
     if (!SpeechRecognition) {
       setSpeechSupported(false);
-      setSttError('Speech recognition is not supported in this browser. Please use Chrome or Edge, or type your entry below.');
+      setSttMode('whisper');
       return;
     }
 
-    // Proactively request microphone permission so browser prompts the user
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    // Request mic permission first
+    if (navigator.mediaDevices?.getUserMedia) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // Release immediately so SpeechRecognition can use the mic
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach(t => t.stop());
       } catch (err: any) {
-        console.warn('Microphone permission check failed:', err);
         if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
           setErrorMessage('Microphone access was denied. Please allow microphone permissions in your browser URL bar or type below.');
           return;
@@ -362,11 +489,9 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
           setErrorMessage('No microphone detected. Please connect a microphone or use text entry below.');
           return;
         }
-        // Other errors (e.g. NotReadableError) — still attempt STT
       }
     }
 
-    // Use Hindi-English mixed locale as primary, fallback to browser locale
     const lang = navigator.language?.startsWith('hi') ? 'hi-IN' : 'en-IN';
     createAndStartRecognition(lang);
   };
@@ -384,8 +509,18 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
   if (!isOpen) return null;
 
   const toggleListening = () => {
+    // --- Whisper mode ---
+    if (sttMode === 'whisper') {
+      if (isWhisperRecording) {
+        stopWhisperRecording();
+      } else if (!isTranscribing) {
+        startWhisperRecording();
+      }
+      return;
+    }
+
+    // --- Browser Web Speech API mode ---
     if (isListening) {
-      // User wants to stop STT
       isListeningActiveRef.current = false;
       stopListening();
       setInterimText('');
@@ -528,8 +663,32 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
     setParsedData(null);
     setIsSaved(false);
     setErrorMessage(null);
+    setSttError(null);
     setRecordedAudioUrl(null);
+    setInterimText('');
+    setIsTranscribing(false);
   };
+
+  // ── Computed helpers for render ────────────────────────────────────────────
+  const micIsActive = isListening || isWhisperRecording || isTranscribing;
+  const micLabel = isTranscribing
+    ? 'Transcribing… please wait'
+    : isWhisperRecording
+    ? `Recording (${formatSeconds(whisperSeconds)}) — tap to stop & transcribe`
+    : isListening
+    ? 'Listening… Speak now'
+    : sttMode === 'whisper'
+    ? 'Tap to record speech (Whisper AI)'
+    : 'Tap Microphone to Speak';
+  const micSub = isTranscribing
+    ? 'Sending audio to Whisper AI transcription service…'
+    : isWhisperRecording
+    ? 'Speak clearly. Tap the mic again when done to get your transcript.'
+    : isListening
+    ? 'e.g., "Bruno received Rabies booster today, batch R-402, Dr. Sharma"'
+    : sttMode === 'whisper'
+    ? 'Whisper mode: records then transcribes. Works offline from Google services.'
+    : 'Supports vaccines, deworming, medications, tick prevention, and vet expenses';
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -575,7 +734,7 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
 
         {/* Modal Body */}
         <div className="modal-body" style={{ padding: '20px', overflowY: 'auto' }}>
-          {/* Microphone Listening Stage */}
+          {/* Microphone Button */}
           <div
             style={{
               display: 'flex',
@@ -584,10 +743,10 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
               justifyContent: 'center',
               padding: '24px 16px',
               borderRadius: 'var(--radius-lg)',
-              background: isListening
+              background: micIsActive
                 ? 'radial-gradient(circle, rgba(236, 72, 153, 0.18) 0%, rgba(20, 20, 28, 0.8) 70%)'
                 : 'var(--bg-surface-elevated)',
-              border: isListening ? '1.5px solid #ec4899' : '1px solid var(--border-subtle)',
+              border: micIsActive ? '1.5px solid #ec4899' : '1px solid var(--border-subtle)',
               marginBottom: '18px',
               transition: 'all 0.25s ease',
             }}
@@ -596,42 +755,40 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
               type="button"
               id="voice-mic-toggle-btn"
               onClick={toggleListening}
+              disabled={isTranscribing}
               style={{
                 width: '74px',
                 height: '74px',
                 borderRadius: '50%',
                 border: 'none',
-                cursor: 'pointer',
-                background: isListening
+                cursor: isTranscribing ? 'wait' : 'pointer',
+                background: micIsActive
                   ? 'linear-gradient(135deg, #ec4899, #be185d)'
                   : 'linear-gradient(135deg, var(--color-primary), #4f46e5)',
                 color: 'white',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: isListening
+                boxShadow: micIsActive
                   ? '0 0 25px rgba(236, 72, 153, 0.65)'
                   : '0 4px 14px rgba(0, 0, 0, 0.3)',
-                animation: isListening ? 'pulse 1.4s infinite' : 'none',
+                animation: micIsActive ? 'pulse 1.4s infinite' : 'none',
                 transition: 'all 0.2s ease',
+                opacity: isTranscribing ? 0.7 : 1,
               }}
-              title={isListening ? 'Click to stop listening' : 'Click to start speech recognition'}
+              title={micLabel}
             >
-              {isListening ? <Mic size={32} /> : <MicOff size={30} />}
+              {micIsActive ? <Mic size={32} /> : <MicOff size={30} />}
             </button>
 
             <div style={{ marginTop: '14px', textAlign: 'center' }}>
-              <div style={{ fontWeight: 700, fontSize: '0.95rem', color: isListening ? '#ec4899' : 'var(--text-main)' }}>
-                {isListening
-                  ? 'Listening… Speak now'
-                  : 'Tap Microphone to Speak'}
+              <div style={{ fontWeight: 700, fontSize: '0.95rem', color: micIsActive ? '#ec4899' : 'var(--text-main)' }}>
+                {micLabel}
               </div>
               <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                {isListening
-                  ? 'e.g., "Bruno received Rabies booster today, batch R-402, Dr. Sharma"'
-                  : 'Supports vaccines, deworming, medications, tick prevention, and vet expenses'}
+                {micSub}
               </div>
-              {/* Live interim text bubble */}
+              {/* Live interim text bubble (browser STT only) */}
               {isListening && interimText && (
                 <div style={{
                   marginTop: '8px',
@@ -648,11 +805,63 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
                   {interimText}
                 </div>
               )}
+              {/* Whisper mode badge */}
+              {sttMode === 'whisper' && !isTranscribing && (
+                <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
+                  <span style={{
+                    fontSize: '0.72rem',
+                    padding: '2px 8px',
+                    borderRadius: '99px',
+                    background: 'rgba(99, 102, 241, 0.18)',
+                    border: '1px solid rgba(99, 102, 241, 0.35)',
+                    color: '#818cf8',
+                    fontWeight: 600,
+                  }}>⚡ Whisper AI</span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    style={{ fontSize: '0.7rem', color: 'var(--text-muted)', padding: '1px 6px' }}
+                    onClick={() => { setSttMode('browser'); setSttError(null); }}
+                    title="Switch back to browser speech recognition"
+                  >
+                    Try Browser STT
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* STT unavailable / network error — non-blocking info banner */}
-          {sttError && (
+          {/* Whisper API Key missing — setup instructions */}
+          {sttMode === 'whisper' && whisperKeyStatus === 'missing' && (
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 'var(--radius-md)',
+                background: 'rgba(99, 102, 241, 0.1)',
+                border: '1px solid rgba(99, 102, 241, 0.35)',
+                marginBottom: '14px',
+                fontSize: '0.82rem',
+              }}
+            >
+              <div style={{ fontWeight: 700, color: '#818cf8', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Sparkles size={14} /> Whisper AI Setup Required
+              </div>
+              <ol style={{ margin: 0, paddingLeft: '18px', color: 'var(--text-muted)', lineHeight: 1.7 }}>
+                <li>Get a free API key at <strong style={{ color: '#818cf8' }}>platform.openai.com/api-keys</strong></li>
+                <li>Open <code style={{ background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: '4px' }}>.env</code> in the project root</li>
+                <li>Set <code style={{ background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: '4px' }}>OPENAI_API_KEY=sk-…your key…</code></li>
+                <li>Restart the backend server (<code style={{ background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: '4px' }}>npm run dev</code>)</li>
+              </ol>
+              <div style={{ marginTop: '8px', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                Until then, use the text field or Quick Voice Samples below.
+              </div>
+            </div>
+          )}
+
+          {/* STT info/error banner */}
+          {sttError && !(
+            sttMode === 'whisper' && whisperKeyStatus === 'missing'
+          ) && (
             <div
               style={{
                 display: 'flex',

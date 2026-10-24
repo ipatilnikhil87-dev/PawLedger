@@ -13,6 +13,7 @@ import { vetVerificationRouter } from './routes/vetVerification.js';
 import { handoverRouter } from './routes/handover.js';
 import { societyRouter } from './routes/society.js';
 import { adminRouter } from './routes/admin.js';
+import { transcribeRouter } from './routes/transcribe.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -23,7 +24,7 @@ app.use(cors({
 }));
 
 // Body parser
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '25mb' }));
 
 // Healthcheck
 app.get('/api/health', (req, res) => {
@@ -42,6 +43,7 @@ app.use('/api/vet-verification', vetVerificationRouter);
 app.use('/api/handover', handoverRouter);
 app.use('/api/society', societyRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/transcribe', transcribeRouter);
 
 app.listen(PORT, () => {
   console.log(`\n🐾 PawLedger Backend Server running on http://localhost:${PORT}`);

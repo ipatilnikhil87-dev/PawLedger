@@ -1,0 +1,19 @@
+{
+  "name": "pawledger-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node dev.mjs",
+    "dev:all": "node dev.mjs",
+    "dev:client": "npm run dev --prefix client",
+    "dev:server": "npm run dev --prefix server",
+    "build:client": "npm run build --prefix client",
+    "build:server": "npm run build --prefix server",
+    "test:schedule": "node test-schedule.mjs",
+    "test:backend": "node test-backend.mjs",
+    "test:sync": "node test-cloud-sync.mjs",
+    "test:voice": "node test-voice-entry.mjs",
+    "test:e2e": "npx tsx test-e2e-suite.mjs",
+    "test:all": "node test-schedule.mjs && node test-backend.mjs && node test-cloud-sync.mjs && node test-voice-entry.mjs && npx tsx test-e2e-suite.mjs"
+  }
+}

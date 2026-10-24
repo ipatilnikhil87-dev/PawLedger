@@ -1,0 +1,59 @@
+[
+  {
+    "id": "clinic_cessna_domlur",
+    "name": "Cessna Lifeline Veterinary Hospital (Domlur)",
+    "area": "Domlur / Indiranagar",
+    "address": "148, HC Towers, Intermediate Ring Rd, Amarjyoti Layout, Domlur, Bengaluru, 560071",
+    "phone": "+918041530949",
+    "altPhone": "+917676365365",
+    "is24x7": true,
+    "notes": "Full emergency ICU, blood bank, digital radiography, 24x7 trauma care. Verify on-duty emergency doctor before arrival."
+  },
+  {
+    "id": "clinic_cessna_sarjapur",
+    "name": "Cessna Lifeline Veterinary Hospital (Sarjapur)",
+    "area": "Sarjapur Road / Bellandur",
+    "address": "Opposite Springfields Apartments, Sarjapur Main Rd, Kaikondrahalli, Bengaluru, 560035",
+    "phone": "+917676765765",
+    "altPhone": "+918041477747",
+    "is24x7": true,
+    "notes": "24x7 emergency & diagnostics center serving East & South-East Bengaluru."
+  },
+  {
+    "id": "clinic_crown_vet",
+    "name": "Crown Vet (Koramangala)",
+    "area": "Koramangala",
+    "address": "80 Feet Rd, 4th Block, Koramangala, Bengaluru, Karnataka 560034",
+    "phone": "+918046830000",
+    "altPhone": "+919108031122",
+    "is24x7": true,
+    "notes": "Modern surgical facilities, in-house lab, 24x7 emergency admissions."
+  },
+  {
+    "id": "clinic_care_animal",
+    "name": "CARE Animal Hospital & Diagnostic Centre",
+    "area": "HSR Layout",
+    "address": "585, 14th Main Rd, Sector 7, HSR Layout, Bengaluru, 560102",
+    "phone": "+918025721111",
+    "is24x7": true,
+    "notes": "24-hour critical care and ultrasound diagnostics. Advance phone confirmation recommended."
+  },
+  {
+    "id": "clinic_bangalore_pet_hosp",
+    "name": "Bangalore Pet Hospital (Whitefield)",
+    "area": "Whitefield",
+    "address": "Near ITPL, Whitefield Main Road, Bengaluru, 560066",
+    "phone": "+919845012345",
+    "is24x7": true,
+    "notes": "Emergency surgery & overnight inpatient monitoring."
+  },
+  {
+    "id": "clinic_sgacc",
+    "name": "Sanjay Gandhi Animal Care Centre / Vet Hospital",
+    "area": "Hebbal / North Bengaluru",
+    "address": "Veterinary College Campus, Bellary Rd, Hebbal, Bengaluru, 560024",
+    "phone": "+918023411483",
+    "is24x7": false,
+    "notes": "Government Veterinary College tertiary referral hospital. Best for specialized orthopedic & soft-tissue surgery."
+  }
+]

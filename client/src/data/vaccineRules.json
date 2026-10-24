@@ -1,0 +1,134 @@
+{
+  "version": "1.0.0",
+  "country": "IN",
+  "disclaimer": "General veterinary guidance based on WSAVA & Indian veterinary standards. Always confirm with a licensed veterinarian.",
+  "vaccines": [
+    {
+      "key": "dhppil",
+      "name": "DHPPiL / 7-in-1 / 9-in-1 Core Combination",
+      "category": "core",
+      "protectionAgainst": [
+        "Canine Distemper",
+        "Infectious Canine Hepatitis",
+        "Parvovirus",
+        "Parainfluenza",
+        "Leptospirosis"
+      ],
+      "notes": "Essential core vaccine protecting against fatal viral and bacterial diseases prevalent in India.",
+      "boosterIntervalMonths": 12,
+      "doses": [
+        {
+          "doseNumber": 1,
+          "minAgeWeeks": 6,
+          "idealAgeWeeks": 7,
+          "label": "Puppy DP / DHPPiL Dose 1",
+          "description": "Initial priming dose once maternal antibodies start waning."
+        },
+        {
+          "doseNumber": 2,
+          "minAgeWeeks": 10,
+          "idealAgeWeeks": 11,
+          "minIntervalWeeksFromPrevious": 3,
+          "label": "DHPPiL Dose 2",
+          "description": "Second booster dose to ensure immune response."
+        },
+        {
+          "doseNumber": 3,
+          "minAgeWeeks": 14,
+          "idealAgeWeeks": 15,
+          "minIntervalWeeksFromPrevious": 3,
+          "label": "DHPPiL Dose 3",
+          "description": "Final puppy series dose providing long-term immunity."
+        }
+      ]
+    },
+    {
+      "key": "rabies",
+      "name": "Anti-Rabies Vaccine (ARV)",
+      "category": "core",
+      "protectionAgainst": [
+        "Rabies Virus"
+      ],
+      "notes": "Legally mandated and vital in India. Administered at 12-16 weeks followed by a booster dose 3-4 weeks later, then annually.",
+      "boosterIntervalMonths": 12,
+      "doses": [
+        {
+          "doseNumber": 1,
+          "minAgeWeeks": 12,
+          "idealAgeWeeks": 14,
+          "label": "Rabies Primary Dose",
+          "description": "Mandatory core immunization against rabies."
+        },
+        {
+          "doseNumber": 2,
+          "minAgeWeeks": 16,
+          "idealAgeWeeks": 18,
+          "minIntervalWeeksFromPrevious": 4,
+          "label": "Rabies First-Year Booster",
+          "description": "Booster administered 3-4 weeks after primary dose to consolidate immunity."
+        }
+      ]
+    },
+    {
+      "key": "kennel_cough",
+      "name": "Kennel Cough (Bordetella / Canine Parainfluenza)",
+      "category": "non_core",
+      "protectionAgainst": [
+        "Bordetella bronchiseptica",
+        "Canine Infectious Respiratory Disease Complex"
+      ],
+      "notes": "Highly recommended for dogs visiting dog parks (Cubbon Park), boarding kennels, or grooming salons in urban areas.",
+      "boosterIntervalMonths": 12,
+      "doses": [
+        {
+          "doseNumber": 1,
+          "minAgeWeeks": 12,
+          "idealAgeWeeks": 14,
+          "label": "Kennel Cough Dose 1",
+          "description": "Intranasal or subcutaneous immunization for social dogs."
+        }
+      ]
+    },
+    {
+      "key": "coronavirus",
+      "name": "Canine Coronavirus (CCoV)",
+      "category": "lifestyle",
+      "protectionAgainst": [
+        "Canine Enteric Coronavirus"
+      ],
+      "notes": "Optional gastrointestinal protection, frequently given with puppy combinations in multi-dog environments.",
+      "boosterIntervalMonths": 12,
+      "doses": [
+        {
+          "doseNumber": 1,
+          "minAgeWeeks": 8,
+          "idealAgeWeeks": 9,
+          "label": "Coronavirus Dose 1",
+          "description": "Protection against gastrointestinal viral enteritis."
+        },
+        {
+          "doseNumber": 2,
+          "minAgeWeeks": 12,
+          "idealAgeWeeks": 13,
+          "minIntervalWeeksFromPrevious": 3,
+          "label": "Coronavirus Dose 2",
+          "description": "Booster dose."
+        }
+      ]
+    }
+  ],
+  "dewormingSchedule": {
+    "puppyIntervalWeeks": 2,
+    "puppyMaxAgeWeeks": 12,
+    "youngIntervalWeeks": 4,
+    "youngMaxAgeWeeks": 24,
+    "adultIntervalMonths": 3,
+    "monsoonIntervalMonths": 2,
+    "notes": "Puppies need deworming every 2 weeks up to 12 weeks, monthly up to 6 months, and every 3 months for adults."
+  },
+  "tickFleaSchedule": {
+    "defaultIntervalDays": 30,
+    "bravectoIntervalDays": 90,
+    "notes": "Continuous prevention is essential year-round in Bengaluru, with peak flea/tick pressure during monsoon (June-September) and post-monsoon humidity."
+  }
+}

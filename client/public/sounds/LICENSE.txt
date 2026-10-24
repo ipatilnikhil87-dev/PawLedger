@@ -1,0 +1,9 @@
+PawLedger Puppy Bark Sound Asset
+====================================
+File: puppy-bark.mp3
+Original Work: Sound-of-dog.ogg (transcoded to MP3)
+Author: Kriplozoik
+Source: Wikimedia Commons (https://commons.wikimedia.org/wiki/File:Sound-of-dog.ogg)
+License: Creative Commons Attribution-ShareAlike 2.5 / 2.0 / 1.0 (CC BY-SA) & GFDL
+Description: A friendly, playful bark suitable for friendly dog/puppy splash screen animation.
+Duration: ~1.4 seconds

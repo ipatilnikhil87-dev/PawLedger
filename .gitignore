@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Production builds
+dist/
+*/dist/
+build/
+
+# Environment files and credentials
+.env
+*.env
+!.env.example
+.env.local
+.env.*.local
+
+# Logs and databases
+*.log
+logs/
+server/pawledger.db.json
+pawledger.db.json
+
+# System & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Cloudflare tunnel artifacts
+.cloudflared/

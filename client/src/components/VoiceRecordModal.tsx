@@ -72,20 +72,23 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
 
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
+  const [interimText, setInterimText] = useState('');
   const [speechSupported, setSpeechSupported] = useState(true);
   const [parsedData, setParsedData] = useState<ParsedResult | null>(null);
   const [isSaved, setIsSaved] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // sttError shows a non-blocking banner when STT has a network/service issue
+  const [sttError, setSttError] = useState<string | null>(null);
 
   const recognitionRef = useRef<any>(null);
-  const fallbackLangRef = useRef<'en-IN' | string>('en-IN');
+  // Whether the user actively wants STT running (for auto-restart logic)
+  const isListeningActiveRef = useRef(false);
   const isRetryingRef = useRef(false);
 
-  // Audio Recording Fallback State (when browser cloud speech services are offline or blocked)
+  // Optional Audio Memo state (separate from STT, never auto-activated)
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const [speechCloudUnavailable, setSpeechCloudUnavailable] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -97,16 +100,17 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // Check speech recognition capability on mount
+  // Check speech recognition capability on mount / when modal opens
   useEffect(() => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       setSpeechSupported(false);
-      setSpeechCloudUnavailable(true);
     }
-  }, []);
+    // Always clear prior STT errors when modal reopens so user gets a fresh retry
+    setSttError(null);
+  }, [isOpen]);
 
   const stopListening = () => {
     if (recognitionRef.current) {
@@ -142,9 +146,12 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
   // Cleanup recognition on modal close or unmount
   useEffect(() => {
     if (!isOpen) {
+      isListeningActiveRef.current = false;
       stopListening();
       stopLocalAudioRecording();
       setErrorMessage(null);
+      setSttError(null);
+      setInterimText('');
     }
   }, [isOpen]);
 
@@ -204,124 +211,164 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
     }
   };
 
-  const startListeningSession = async (useFallbackLang = false) => {
+  /**
+   * Creates and starts a Web SpeechRecognition instance.
+   * Uses continuous=true and auto-restarts on onend while isListeningActiveRef is true.
+   * On network/service errors shows a non-blocking yellow banner instead of switching to audio.
+   */
+  const createAndStartRecognition = (lang: string) => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    // Teardown any existing instance
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch {}
+      recognitionRef.current = null;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    recognition.lang = lang;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setSttError(null);
+      setErrorMessage(null);
+    };
+
+    recognition.onresult = (event: any) => {
+      let finalPart = '';
+      let interimPart = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const res = event.results[i];
+        if (res.isFinal) {
+          finalPart += res[0].transcript;
+        } else {
+          interimPart += res[0].transcript;
+        }
+      }
+      if (finalPart) {
+        // Append confirmed words to transcript
+        setTranscript(prev => {
+          const trimmed = prev.trim();
+          return trimmed ? trimmed + ' ' + finalPart.trim() : finalPart.trim();
+        });
+        setInterimText('');
+      } else {
+        setInterimText(interimPart);
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      console.warn('SpeechRecognition error:', event.error);
+      // 'aborted' fires when we call abort() ourselves — ignore silently
+      if (event.error === 'aborted') return;
+
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        isListeningActiveRef.current = false;
+        setIsListening(false);
+        setInterimText('');
+        setErrorMessage('Microphone access was denied. Please allow microphone permissions in your browser and try again.');
+        return;
+      }
+
+      if (event.error === 'audio-capture') {
+        isListeningActiveRef.current = false;
+        setIsListening(false);
+        setInterimText('');
+        setErrorMessage('No microphone found or microphone is busy. Please check your device and try again.');
+        return;
+      }
+
+      if (event.error === 'network' || event.error === 'service-not-allowed') {
+        // Non-blocking banner — user can still type or use quick samples
+        setSttError(
+          'Speech recognition requires a connection to browser speech services (Google/Windows). ' +
+          'You can type your entry below or use a Quick Voice Sample. ' +
+          'Try retrying in a moment or grant microphone permissions if prompted.'
+        );
+        isListeningActiveRef.current = false;
+        setIsListening(false);
+        setInterimText('');
+        return;
+      }
+
+      if (event.error === 'no-speech') {
+        // no-speech is normal; if still active, onend will auto-restart
+        return;
+      }
+
+      // Unknown errors: show info banner, don't lock out STT permanently
+      setSttError(`Speech recognition encountered an issue (${event.error}). You can retry or type below.`);
+      isListeningActiveRef.current = false;
+      setIsListening(false);
+      setInterimText('');
+    };
+
+    recognition.onend = () => {
+      // Auto-restart if user still wants to be listening (handles Chrome's automatic stop after silence)
+      if (isListeningActiveRef.current) {
+        try {
+          recognition.start();
+        } catch {
+          // If restart fails, mark as stopped
+          setIsListening(false);
+          setInterimText('');
+          isListeningActiveRef.current = false;
+        }
+      } else {
+        setIsListening(false);
+        setInterimText('');
+      }
+    };
+
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch (err: any) {
+      console.warn('Could not start SpeechRecognition:', err);
+      setSttError('Could not start speech recognition. Please type below or use a Quick Voice Sample.');
+      setIsListening(false);
+      isListeningActiveRef.current = false;
+    }
+  };
+
+  const startListeningSession = async () => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       setSpeechSupported(false);
-      setSpeechCloudUnavailable(true);
-      startLocalAudioRecording();
+      setSttError('Speech recognition is not supported in this browser. Please use Chrome or Edge, or type your entry below.');
       return;
     }
 
-    // 1. Proactively verify/request microphone hardware permission
+    // Proactively request microphone permission so browser prompts the user
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // Release tracks immediately so speech recognition has exclusive device access
+        // Release immediately so SpeechRecognition can use the mic
         stream.getTracks().forEach(track => track.stop());
       } catch (err: any) {
         console.warn('Microphone permission check failed:', err);
         if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
           setErrorMessage('Microphone access was denied. Please allow microphone permissions in your browser URL bar or type below.');
-          setIsListening(false);
           return;
         }
         if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
           setErrorMessage('No microphone detected. Please connect a microphone or use text entry below.');
-          setIsListening(false);
           return;
         }
+        // Other errors (e.g. NotReadableError) — still attempt STT
       }
     }
 
-    // 2. Teardown existing instance before creating a new one
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.abort();
-      } catch {}
-      recognitionRef.current = null;
-    }
-
-    try {
-      const recognition = new SpeechRecognition();
-      // Single-shot phrase recognition avoids socket timeout/disconnect network errors in Chrome
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.maxAlternatives = 1;
-
-      const langToUse = useFallbackLang
-        ? (navigator.language || 'en-US')
-        : (fallbackLangRef.current || 'en-IN');
-      recognition.lang = langToUse;
-
-      recognition.onstart = () => {
-        setIsListening(true);
-        setErrorMessage(null);
-      };
-
-      recognition.onresult = (event: any) => {
-        let currentTranscript = '';
-        for (let i = 0; i < event.results.length; i++) {
-          currentTranscript += event.results[i][0].transcript + ' ';
-        }
-        const cleaned = currentTranscript.trim();
-        if (cleaned) {
-          setTranscript(cleaned);
-        }
-      };
-
-      recognition.onerror = (event: any) => {
-        console.warn('Speech recognition error event:', event.error, event);
-        setIsListening(false);
-
-        if (event.error === 'network') {
-          // If en-IN failed with network and we haven't tried fallback yet, retry with browser locale
-          if (!useFallbackLang && !isRetryingRef.current) {
-            isRetryingRef.current = true;
-            fallbackLangRef.current = navigator.language || 'en-US';
-            console.log('Retrying speech recognition with locale fallback:', fallbackLangRef.current);
-            setTimeout(() => {
-              isRetryingRef.current = false;
-              startListeningSession(true);
-            }, 250);
-            return;
-          }
-
-          // If network error persists in this browser/environment:
-          // Smoothly activate local audio voice recording without showing a repetitive blocking error!
-          setSpeechCloudUnavailable(true);
-          console.log('Browser speech services unreachable; smoothly activating local audio voice recording.');
-          startLocalAudioRecording();
-          return;
-        }
-
-        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          setErrorMessage('Microphone access was denied. Please allow microphone permissions in your browser URL bar or type below.');
-        } else if (event.error === 'no-speech') {
-          setSpeechCloudUnavailable(true);
-          startLocalAudioRecording();
-        } else if (event.error === 'audio-capture') {
-          setErrorMessage('No microphone was found or microphone is busy in another app.');
-        } else if (event.error !== 'aborted') {
-          setSpeechCloudUnavailable(true);
-          startLocalAudioRecording();
-        }
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-
-      recognitionRef.current = recognition;
-      recognition.start();
-    } catch (err: any) {
-      console.warn('Could not start SpeechRecognition, falling back to local recording:', err);
-      setIsListening(false);
-      setSpeechCloudUnavailable(true);
-      startLocalAudioRecording();
-    }
+    // Use Hindi-English mixed locale as primary, fallback to browser locale
+    const lang = navigator.language?.startsWith('hi') ? 'hi-IN' : 'en-IN';
+    createAndStartRecognition(lang);
   };
 
   // Parse transcript whenever it changes significantly
@@ -337,22 +384,19 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
   if (!isOpen) return null;
 
   const toggleListening = () => {
-    if (isListening || isRecordingAudio) {
+    if (isListening) {
+      // User wants to stop STT
+      isListeningActiveRef.current = false;
       stopListening();
-      stopLocalAudioRecording();
+      setInterimText('');
       return;
     }
 
     setErrorMessage(null);
+    setSttError(null);
     setIsSaved(false);
-
-    if (speechCloudUnavailable) {
-      startLocalAudioRecording();
-      return;
-    }
-
-    fallbackLangRef.current = 'en-IN';
-    startListeningSession(false);
+    isListeningActiveRef.current = true;
+    startListeningSession();
   };
 
   const applyPreset = (presetText: string) => {
@@ -540,10 +584,10 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
               justifyContent: 'center',
               padding: '24px 16px',
               borderRadius: 'var(--radius-lg)',
-              background: (isListening || isRecordingAudio)
+              background: isListening
                 ? 'radial-gradient(circle, rgba(236, 72, 153, 0.18) 0%, rgba(20, 20, 28, 0.8) 70%)'
                 : 'var(--bg-surface-elevated)',
-              border: (isListening || isRecordingAudio) ? '1.5px solid #ec4899' : '1px solid var(--border-subtle)',
+              border: isListening ? '1.5px solid #ec4899' : '1px solid var(--border-subtle)',
               marginBottom: '18px',
               transition: 'all 0.25s ease',
             }}
@@ -558,43 +602,95 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
                 borderRadius: '50%',
                 border: 'none',
                 cursor: 'pointer',
-                background: (isListening || isRecordingAudio)
+                background: isListening
                   ? 'linear-gradient(135deg, #ec4899, #be185d)'
                   : 'linear-gradient(135deg, var(--color-primary), #4f46e5)',
                 color: 'white',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: (isListening || isRecordingAudio)
+                boxShadow: isListening
                   ? '0 0 25px rgba(236, 72, 153, 0.65)'
                   : '0 4px 14px rgba(0, 0, 0, 0.3)',
-                animation: (isListening || isRecordingAudio) ? 'pulse 1.4s infinite' : 'none',
+                animation: isListening ? 'pulse 1.4s infinite' : 'none',
                 transition: 'all 0.2s ease',
               }}
-              title={(isListening || isRecordingAudio) ? 'Click to stop recording' : 'Click to start voice input'}
+              title={isListening ? 'Click to stop listening' : 'Click to start speech recognition'}
             >
-              {(isListening || isRecordingAudio) ? <Mic size={32} /> : <MicOff size={30} />}
+              {isListening ? <Mic size={32} /> : <MicOff size={30} />}
             </button>
 
             <div style={{ marginTop: '14px', textAlign: 'center' }}>
-              <div style={{ fontWeight: 700, fontSize: '0.95rem', color: (isListening || isRecordingAudio) ? '#ec4899' : 'var(--text-main)' }}>
+              <div style={{ fontWeight: 700, fontSize: '0.95rem', color: isListening ? '#ec4899' : 'var(--text-main)' }}>
                 {isListening
-                  ? 'Listening (Live Speech)... Speak now'
-                  : isRecordingAudio
-                  ? `Recording Voice Memo (${formatSeconds(recordingSeconds)})... Tap to Finish`
+                  ? 'Listening… Speak now'
                   : 'Tap Microphone to Speak'}
               </div>
               <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                {(isListening || isRecordingAudio)
+                {isListening
                   ? 'e.g., "Bruno received Rabies booster today, batch R-402, Dr. Sharma"'
-                  : speechCloudUnavailable
-                  ? 'Local microphone voice recording active (tap to record voice memo)'
                   : 'Supports vaccines, deworming, medications, tick prevention, and vet expenses'}
               </div>
+              {/* Live interim text bubble */}
+              {isListening && interimText && (
+                <div style={{
+                  marginTop: '8px',
+                  padding: '6px 12px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'rgba(236, 72, 153, 0.15)',
+                  border: '1px dashed rgba(236, 72, 153, 0.5)',
+                  color: '#ec4899',
+                  fontSize: '0.82rem',
+                  fontStyle: 'italic',
+                  maxWidth: '90%',
+                  margin: '8px auto 0',
+                }}>
+                  {interimText}
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Recorded Audio Memo Playback */}
+          {/* STT unavailable / network error — non-blocking info banner */}
+          {sttError && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '8px',
+                padding: '10px 14px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'rgba(234, 179, 8, 0.12)',
+                border: '1px solid rgba(234, 179, 8, 0.4)',
+                color: '#ca8a04',
+                fontSize: '0.82rem',
+                marginBottom: '14px',
+              }}
+            >
+              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '1px' }} />
+              <div style={{ flex: 1 }}>
+                {sttError}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: '8px', color: '#ca8a04', fontWeight: 700 }}
+                  onClick={() => { setSttError(null); isListeningActiveRef.current = true; startListeningSession(); }}
+                >
+                  ↺ Retry
+                </button>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs"
+                onClick={() => setSttError(null)}
+                style={{ color: 'var(--text-muted)', flexShrink: 0 }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* Optional Voice Memo section — only shown when a recording was made */}
           {recordedAudioUrl && (
             <div
               style={{
@@ -621,6 +717,30 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
               >
                 <X size={14} />
               </button>
+            </div>
+          )}
+          {/* Optional: Record a voice memo button (separate from STT) */}
+          {!recordedAudioUrl && (
+            <div style={{ marginBottom: '12px', textAlign: 'center' }}>
+              {isRecordingAudio ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-xs"
+                  onClick={stopLocalAudioRecording}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#ec4899' }}
+                >
+                  <Volume2 size={13} /> Stop Memo ({formatSeconds(recordingSeconds)})
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={startLocalAudioRecording}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '0.74rem' }}
+                >
+                  <Volume2 size={13} /> Record Voice Memo (optional)
+                </button>
+              )}
             </div>
           )}
 

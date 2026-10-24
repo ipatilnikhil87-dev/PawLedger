@@ -78,22 +78,93 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const recognitionRef = useRef<any>(null);
+  const fallbackLangRef = useRef<'en-IN' | string>('en-IN');
+  const isRetryingRef = useRef(false);
 
-  // Initialize Speech Recognition
+  // Check speech recognition capability on mount
   useEffect(() => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       setSpeechSupported(false);
+    }
+  }, []);
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        try {
+          recognitionRef.current.abort();
+        } catch {
+          // ignore
+        }
+      }
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+  };
+
+  // Cleanup recognition on modal close or unmount
+  useEffect(() => {
+    if (!isOpen) {
+      stopListening();
+      setErrorMessage(null);
+    }
+  }, [isOpen]);
+
+  const startListeningSession = async (useFallbackLang = false) => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setSpeechSupported(false);
+      setErrorMessage('Speech recognition is not supported in this browser. Please type or use sample commands below.');
       return;
+    }
+
+    // 1. Proactively verify/request microphone hardware permission
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Release tracks immediately so speech recognition has exclusive device access
+        stream.getTracks().forEach(track => track.stop());
+      } catch (err: any) {
+        console.warn('Microphone permission check failed:', err);
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          setErrorMessage('Microphone access was denied. Please allow microphone permissions in your browser URL bar or type below.');
+          setIsListening(false);
+          return;
+        }
+        if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          setErrorMessage('No microphone detected. Please connect a microphone or use text entry below.');
+          setIsListening(false);
+          return;
+        }
+      }
+    }
+
+    // 2. Teardown existing instance before creating a new one
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {}
+      recognitionRef.current = null;
     }
 
     try {
       const recognition = new SpeechRecognition();
-      recognition.continuous = true;
+      // Single-shot phrase recognition avoids socket timeout/disconnect network errors in Chrome
+      recognition.continuous = false;
       recognition.interimResults = true;
-      recognition.lang = 'en-IN'; // Indian English default, understands Indian accents & terminology
+      recognition.maxAlternatives = 1;
+
+      const langToUse = useFallbackLang
+        ? (navigator.language || 'en-US')
+        : (fallbackLangRef.current || 'en-IN');
+      recognition.lang = langToUse;
 
       recognition.onstart = () => {
         setIsListening(true);
@@ -105,17 +176,42 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
         for (let i = 0; i < event.results.length; i++) {
           currentTranscript += event.results[i][0].transcript + ' ';
         }
-        setTranscript(currentTranscript.trim());
+        const cleaned = currentTranscript.trim();
+        if (cleaned) {
+          setTranscript(cleaned);
+        }
       };
 
       recognition.onerror = (event: any) => {
-        console.warn('Speech recognition error:', event.error);
-        if (event.error === 'not-allowed') {
-          setErrorMessage('Microphone access was denied. Please allow microphone permissions or type your entry below.');
-        } else if (event.error !== 'no-speech') {
+        console.warn('Speech recognition error event:', event.error, event);
+        setIsListening(false);
+
+        if (event.error === 'network') {
+          // If en-IN failed with network and we haven't tried fallback yet, retry with browser locale
+          if (!useFallbackLang && !isRetryingRef.current) {
+            isRetryingRef.current = true;
+            fallbackLangRef.current = navigator.language || 'en-US';
+            console.log('Retrying speech recognition with locale fallback:', fallbackLangRef.current);
+            setTimeout(() => {
+              isRetryingRef.current = false;
+              startListeningSession(true);
+            }, 300);
+            return;
+          }
+
+          // If network error persists (cloud speech API unreachable / blocked / offline)
+          setErrorMessage(
+            'Speech recognition requires connection to browser speech services (or was blocked by an extension/setting). You can type your entry or tap a quick voice sample below.'
+          );
+        } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          setErrorMessage('Microphone access was denied. Please allow microphone permissions in your browser URL bar or type below.');
+        } else if (event.error === 'no-speech') {
+          setErrorMessage('No speech was detected. Please try speaking again or use text entry below.');
+        } else if (event.error === 'audio-capture') {
+          setErrorMessage('No microphone was found or microphone is busy in another app.');
+        } else if (event.error !== 'aborted') {
           setErrorMessage(`Voice input error (${event.error}). You can also type or use sample voice commands below.`);
         }
-        setIsListening(false);
       };
 
       recognition.onend = () => {
@@ -123,21 +219,13 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
       };
 
       recognitionRef.current = recognition;
-    } catch (err) {
-      console.warn('Could not initialize SpeechRecognition:', err);
-      setSpeechSupported(false);
+      recognition.start();
+    } catch (err: any) {
+      console.warn('Could not start SpeechRecognition:', err);
+      setIsListening(false);
+      setErrorMessage('Could not start voice recognition. Please use manual text entry below.');
     }
-
-    return () => {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {
-          // ignore
-        }
-      }
-    };
-  }, []);
+  };
 
   // Parse transcript whenever it changes significantly
   useEffect(() => {
@@ -152,38 +240,18 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
   if (!isOpen) return null;
 
   const toggleListening = () => {
-    if (!recognitionRef.current) {
-      setErrorMessage('Speech recognition is not supported in this browser. Please use the text input below.');
-      return;
-    }
-
     if (isListening) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {
-        console.warn(e);
-      }
-      setIsListening(false);
+      stopListening();
     } else {
       setErrorMessage(null);
       setIsSaved(false);
-      try {
-        recognitionRef.current.start();
-      } catch (err) {
-        console.warn('Recognition start error:', err);
-      }
+      fallbackLangRef.current = 'en-IN';
+      startListeningSession(false);
     }
   };
 
   const applyPreset = (presetText: string) => {
-    if (isListening && recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {
-        // ignore
-      }
-    }
-    setIsListening(false);
+    stopListening();
     setTranscript(presetText);
     setIsSaved(false);
     setErrorMessage(null);
@@ -453,7 +521,10 @@ export const VoiceRecordModal: React.FC<VoiceRecordModalProps> = ({ isOpen, onCl
             <textarea
               id="voice-transcript-input"
               value={transcript}
-              onChange={e => setTranscript(e.target.value)}
+              onChange={e => {
+                setTranscript(e.target.value);
+                setErrorMessage(null);
+              }}
               placeholder="e.g., Bruno got his Anti-Rabies vaccination today batch R9012 at Cessna Lifeline Dr. Rao"
               rows={3}
               style={{

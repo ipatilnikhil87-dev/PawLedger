@@ -114,6 +114,17 @@ function MainApp() {
   // Voice entry & Phase 4 feature modals
   const [isVoiceEntryOpen, setIsVoiceEntryOpen] = useState(false);
   const [isCareHandoverPDFOpen, setIsCareHandoverPDFOpen] = useState(false);
+
+  // ── Logout: reset session state and redirect to LoginSyncScreen ──────────
+  const handleLogout = () => {
+    // Reset entry gate — LoginSyncScreen will now be rendered instead of the app
+    setHasEnteredApp(false);
+    // Close any open modals that might reference auth state
+    setIsAuthOpen(false);
+    // Replace the current history entry so pressing the browser Back button
+    // cannot return to an authenticated view without signing in again.
+    window.history.replaceState(null, '', window.location.pathname + '#/home');
+  };
   const [legalModalState, setLegalModalState] = useState<{
     isOpen: boolean;
     tab: 'privacy' | 'terms' | 'dpdp';
@@ -321,6 +332,7 @@ function MainApp() {
       <AuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
+        onLogout={handleLogout}
       />
 
       <HouseholdManagerModal

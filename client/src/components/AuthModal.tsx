@@ -14,6 +14,7 @@ import {
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onLogout?: () => void;
 }
 
 const GoogleIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
@@ -37,7 +38,7 @@ const GoogleIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
   </svg>
 );
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLogout }) => {
   const { settings, updateSettings, reloadAll } = useApp();
   const { t } = useI18n();
 
@@ -162,8 +163,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     localStorage.removeItem('pawledger_user_photo');
     localStorage.removeItem('pawledger_user_uid');
     localStorage.removeItem('pawledger_user_phone');
-    setMessage('Logged out successfully.');
     await reloadAll();
+    // Redirect to the initial login screen via the App-level callback
+    onClose();
+    onLogout?.();
   };
 
   const handleDeleteAccount = async () => {

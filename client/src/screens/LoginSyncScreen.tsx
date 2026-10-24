@@ -189,7 +189,13 @@ export const LoginSyncScreen: React.FC<LoginSyncScreenProps> = ({ onEnterHome })
     localStorage.removeItem('pawledger_user_phone');
     setToken(null);
     setCurrentUser(null);
-    setMessage('Logged out. You can sign in with another Google account or continue in Guest Mode.');
+    // Clear Google-specific fields from settings so the UI shows fresh state
+    await updateSettings({
+      ownerPhoto: undefined,
+      ownerEmail: undefined,
+      firebaseUid: undefined,
+    });
+    setMessage('Logged out. Sign in with another Google account or continue in Guest Mode.');
   };
 
   const isUserAuthenticated = Boolean(token && currentUser);

@@ -19,7 +19,7 @@ import {
   Flame,
   Bug,
   Camera,
-  Mic
+  FileText
 } from 'lucide-react';
 import { getDogAge } from '../engine/scheduleEngine';
 import { MissedDoseModal } from '../components/MissedDoseModal';
@@ -33,6 +33,7 @@ interface HomeScreenProps {
   onOpenEmergencyDirectory: () => void;
   onOpenLostDog: () => void;
   onOpenVoiceEntry: () => void;
+  onOpenCareHandoverPDF: () => void;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -43,6 +44,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onOpenEmergencyDirectory,
   onOpenLostDog,
   onOpenVoiceEntry,
+  onOpenCareHandoverPDF,
 }) => {
   const {
     activeDog,
@@ -213,13 +215,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
       {/* Quick Action Grid (Add by Voice, Passport, 24x7 Vets, Visit Summary, Lost Dog) */}
       <div className="quick-action-grid">
-        <div className="quick-action-card" onClick={onOpenVoiceEntry} id="quick-action-voice-entry">
-          <div className="quick-action-icon" style={{ background: 'rgba(236, 72, 153, 0.18)', color: '#ec4899' }}>
-            <Mic size={22} />
+        <div className="quick-action-card" onClick={onOpenCareHandoverPDF} id="quick-action-care-guide">
+          <div className="quick-action-icon" style={{ background: 'rgba(99, 102, 241, 0.18)', color: '#818cf8' }}>
+            <FileText size={22} />
           </div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Add by Voice</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Voice Record Entry</div>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Care Guide PDF</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Handover to Caretaker</div>
           </div>
         </div>
 

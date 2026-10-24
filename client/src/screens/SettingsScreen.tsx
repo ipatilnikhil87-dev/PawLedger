@@ -18,7 +18,8 @@ import {
   HeartHandshake,
   Building2,
   Sliders,
-  Check
+  Check,
+  FileText
 } from 'lucide-react';
 import { exportAllLocalData, importLocalData } from '../storage/db';
 
@@ -28,6 +29,7 @@ interface SettingsScreenProps {
   onOpenHousehold: () => void;
   onOpenVetVerification: () => void;
   onOpenHandover: () => void;
+  onOpenCareHandoverPDF: () => void;
   onOpenSociety: () => void;
   onOpenAdmin: () => void;
   onOpenLegal?: (tab?: 'privacy' | 'terms' | 'dpdp') => void;
@@ -39,6 +41,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onOpenHousehold,
   onOpenVetVerification,
   onOpenHandover,
+  onOpenCareHandoverPDF,
   onOpenSociety,
   onOpenAdmin,
   onOpenLegal,
@@ -210,8 +213,22 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Transfer custody and full records to an adopter or foster</div>
             </div>
           </button>
+
+          <button
+            className="btn btn-secondary btn-sm"
+            style={{ justifyContent: 'flex-start', padding: '12px' }}
+            onClick={onOpenCareHandoverPDF}
+            id="settings-care-guide-pdf-btn"
+          >
+            <FileText size={18} style={{ color: '#818cf8' }} />
+            <div style={{ textAlign: 'left', marginLeft: '6px' }}>
+              <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>Temporary Care Guide PDF</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Generate a printable care guide for your dog's caretaker</div>
+            </div>
+          </button>
         </div>
       </div>
+
 
       {/* Language Selector */}
       <div className="card">

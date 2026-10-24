@@ -27,6 +27,7 @@ import { VoiceRecordModal } from './components/VoiceRecordModal';
 import { LegalModal } from './components/LegalModal';
 import { LoginSyncScreen } from './screens/LoginSyncScreen';
 import { SplashScreen } from './components/SplashScreen';
+import { CareHandoverPDFModal } from './components/CareHandoverPDFModal';
 
 function parseAppHash(hash: string): {
   type: 'tab' | 'vet-verify' | 'handover';
@@ -112,6 +113,7 @@ function MainApp() {
 
   // Voice entry & Phase 4 feature modals
   const [isVoiceEntryOpen, setIsVoiceEntryOpen] = useState(false);
+  const [isCareHandoverPDFOpen, setIsCareHandoverPDFOpen] = useState(false);
   const [legalModalState, setLegalModalState] = useState<{
     isOpen: boolean;
     tab: 'privacy' | 'terms' | 'dpdp';
@@ -225,6 +227,7 @@ function MainApp() {
             onOpenEmergencyDirectory={() => setIsEmergencyDirectoryOpen(true)}
             onOpenLostDog={() => setIsLostDogOpen(true)}
             onOpenVoiceEntry={() => setIsVoiceEntryOpen(true)}
+            onOpenCareHandoverPDF={() => setIsCareHandoverPDFOpen(true)}
           />
         )}
 
@@ -243,6 +246,7 @@ function MainApp() {
               })
             }
             onOpenVoiceEntry={() => setIsVoiceEntryOpen(true)}
+            onOpenCareHandoverPDF={() => setIsCareHandoverPDFOpen(true)}
           />
         )}
 
@@ -255,6 +259,7 @@ function MainApp() {
             onOpenHousehold={() => setIsHouseholdOpen(true)}
             onOpenVetVerification={() => setIsVetVerificationOpen(true)}
             onOpenHandover={() => setIsHandoverOpen(true)}
+            onOpenCareHandoverPDF={() => setIsCareHandoverPDFOpen(true)}
             onOpenSociety={() => setIsSocietyOpen(true)}
             onOpenAdmin={() => setIsAdminOpen(true)}
             onOpenLegal={(tab) => setLegalModalState({ isOpen: true, tab: tab || 'privacy' })}
@@ -347,6 +352,12 @@ function MainApp() {
       <VoiceRecordModal
         isOpen={isVoiceEntryOpen}
         onClose={() => setIsVoiceEntryOpen(false)}
+      />
+
+      {/* Care Handover PDF Modal */}
+      <CareHandoverPDFModal
+        isOpen={isCareHandoverPDFOpen}
+        onClose={() => setIsCareHandoverPDFOpen(false)}
       />
 
       <LegalModal

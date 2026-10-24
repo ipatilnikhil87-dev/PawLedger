@@ -14,18 +14,20 @@ import {
   Calendar,
   Building2,
   UserCheck,
-  Mic
+  FileText
 } from 'lucide-react';
 import { formatDate } from '../engine/scheduleEngine';
 
 interface RecordsScreenProps {
   onOpenAddRecord: (type?: 'vaccine' | 'deworming' | 'tick_flea', vKey?: string, dose?: number) => void;
   onOpenVoiceEntry?: () => void;
+  onOpenCareHandoverPDF?: () => void;
 }
 
 export const RecordsScreen: React.FC<RecordsScreenProps> = ({
   onOpenAddRecord,
   onOpenVoiceEntry,
+  onOpenCareHandoverPDF,
 }) => {
   const {
     activeDog,
@@ -68,14 +70,14 @@ export const RecordsScreen: React.FC<RecordsScreenProps> = ({
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          {onOpenVoiceEntry && (
+          {onOpenCareHandoverPDF && (
             <button
               className="btn btn-secondary btn-sm"
-              onClick={onOpenVoiceEntry}
-              id="records-voice-entry-btn"
+              onClick={onOpenCareHandoverPDF}
+              id="records-care-guide-btn"
               style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
             >
-              <Mic size={15} style={{ color: '#ec4899' }} /> Add by Voice
+              <FileText size={15} style={{ color: '#818cf8' }} /> Care Guide PDF
             </button>
           )}
           <button
